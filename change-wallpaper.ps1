@@ -1,33 +1,39 @@
 
-#!/bin/bash
+# Allowed client IP addresses
+$AllowedIPs = @(
+    "10.120.170.106",
+    "10.120.149.201"
+)
 
-# Allowed client IPs
-ALLOWED_IPS=("10.120.170.106" "10.120.149.201")
+# Get this computer's IPv4 address
+$MyIP = Get-NetIPAddress -AddressFamily IPv4 |
+    Where-Object {
+        $_.IPAddress -notlike "127.*" -and
+        $_.InterfaceAlias -notlike "*Loopback*"
+    } |
+    Select-Object -First 1 -ExpandProperty IPAddress
 
-# Get this device's current IP address
-MY_IP=$(ipconfig getifaddr en0)
-
-# Check whether this device is allowed
-ALLOWED=false
-for IP in "${ALLOWED_IPS[@]}"; do
-    if [ "$MY_IP" = "$IP" ]; then
-        ALLOWED=true
-        break
-    fi
-done
-
-if [ "$ALLOWED" = false ]; then
-    echo "This device is not authorized."
+if ($MyIP -notin $AllowedIPs) {
+    Write-Host "This computer is not authorized."
     exit 1
-fi
+}
 
-echo "Device authorized: $MY_IP"
+Write-Host "Authorized client: $MyIP"
 
-# Download wallpaper
-IMAGE="$HOME/Downloads/wallpaper.jpg"
-curl -L "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1920&q=80" -o "$IMAGE"
+# Download and set wallpaper
+$ImagePath = Join-Path $env:TEMP "wallpaper.jpg"
+$ImageURL = "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1920&q=80"
 
-# Set macOS wallpaper
-osascript -e "tell application \"System Events\" to set picture of every desktop to POSIX file \"$IMAGE\""
+Invoke-WebRequest -Uri $ImageURL -OutFile $ImagePath
 
-echo "Wallpaper changed successfully."
+Add-Type @"
+using System.Runtime.InteropServices;
+public class Wallpaper {
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool SystemParametersInfo(
+        int action, int param, string path, int flags);
+}
+"@
+
+[Wallpaper]::SystemParametersInfo(20, 0, $ImagePath, 3) | Out-Null
+Write-Host "Wallpaper updated."
